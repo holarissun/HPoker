@@ -23,11 +23,6 @@ class Deck:
     def deal_hand(self, num_cards):
         return [self.deal() for _ in range(num_cards)]
 
-# 测试代码
-# deck = Deck()
-# deck.shuffle()
-# print(deck.deal())
-# print(deck.deal())
 
 class Player:
     def __init__(self, name, chips):
@@ -35,19 +30,19 @@ class Player:
         self.chips = chips
         self.hand = []
         self.folded = False
-        self.current_bet = 0  # 当前轮次玩家的下注额
+        self.current_round_bet = 0
         self.all_in = False
+        self.total_bet = 0
 
     def bet(self, amount):
-        """玩家下注或加注"""
         self.all_in = amount >= self.chips
         bet_amount = min(amount, self.chips)
         self.chips -= bet_amount
-        self.current_bet += bet_amount
+        self.current_round_bet += bet_amount
+        self.total_bet += bet_amount
         return bet_amount
 
     def fold(self):
-        """玩家弃牌"""
         self.folded = True
     def __repr__(self):
         return f"Player({self.name}, Chips: {self.chips}, Hand: {self.hand})"
@@ -80,16 +75,16 @@ class PokerHand:
                 return HandRanking.STRAIGHT_FLUSH
             return HandRanking.FLUSH
         
-        # 检查葫芦
-        if 3 in rank_counts.values() and 2 in rank_counts.values():
-            return HandRanking.FULL_HOUSE
-
+        
         # 检查顺子
         if self.is_straight(sorted_cards):
             return HandRanking.STRAIGHT
 
         # 检查其他牌型
         rank_counts = self.get_rank_counts(sorted_cards)
+        # 检查葫芦
+        if 3 in rank_counts.values() and 2 in rank_counts.values():
+            return HandRanking.FULL_HOUSE
         if 4 in rank_counts.values():
             return HandRanking.FOUR_OF_A_KIND
         if 3 in rank_counts.values():
@@ -103,9 +98,9 @@ class PokerHand:
 
         return HandRanking.HIGH_CARD
 
-    def is_flush(self, cards):
-        first_suit = cards[0].suit
-        return all(card.suit == first_suit for card in cards)
+    
+
+
 
     def is_straight(self, cards):
         return all(cards[i].value == cards[i - 1].value + 1 for i in range(1, len(cards)))
@@ -152,14 +147,14 @@ class PokerGame:
 
         self.deck.shuffle()
 
-        # 发两张手牌给每位玩家
+        # pocket
         for player in self.players:
             player.hand = self.deck.deal_hand(2)
 
-        # Pre-flop
+        # Pre-flop bet
         self.betting_round()
 
-        # 发公共牌
+        # Mid-game bets
         self.flop()  # flop
         self.display_game_state()
         self.betting_round()
@@ -180,40 +175,53 @@ class PokerGame:
     def betting_round(self):
         current_bet = 0
         is_new_bet = True
-        while is_new_bet:
-            is_new_bet = False
-            for player in self.players:
+        for player in self.players:
+            player.current_round_bet = 0
+        players_can_bet_list = [1] * len(self.players)
+        print('players_can_bet_list', players_can_bet_list)
+        while 1 in players_can_bet_list:
+            for player_idx_i, player in enumerate(self.players):
                 if player.chips == 0 or player.folded:
+                    players_can_bet_list[player_idx_i] = 0
                     continue
-
+                if players_can_bet_list[player_idx_i] == 0 :
+                    continue
+                
                 print(f"Current highest bet: {current_bet}. {player.name}'s turn.")
-                player_decision = input(f"{player.name}, do you want to 'call', 'raise', or 'fold'? ")
+                valid_action = False
+                while not valid_action:
+                    player_decision = input(f"{player.name}, do you want to 'call', 'raise', or 'fold'? ")
+                    valid_action = player_decision in ['fold', 'call', 'raise']
+                    if not valid_action:
+                        print("Invalid action, please choose 'call', 'raise', or 'fold'.")
+
 
                 if player_decision == 'fold':
                     player.fold()
                     print(f"{player.name} has folded.")
                 elif player_decision == 'call':
-                    bet_amount = player.bet(current_bet - player.current_bet)
+                    bet_amount = player.bet(current_bet - player.current_round_bet)
                     self.pot += bet_amount
+                    players_can_bet_list[player_idx_i] = 0 
                     print(f"{player.name} called with {bet_amount}, current pot is {self.pot}.")
                 elif player_decision == 'raise':
-                    try:
+                    players_can_bet_list = [1] * len(self.players)
+                    players_can_bet_list[player_idx_i] = 0 
+                    amount_valid = False
+                    while not amount_valid:
                         raise_amount = int(input("Enter your raise amount: "))
                         if raise_amount <= 0 or raise_amount + current_bet > player.chips:
                             print("Invalid raise amount, try again.")
                             continue
-                        total_bet = current_bet - player.current_bet + raise_amount
-                        bet_amount = player.bet(total_bet)
-                        current_bet += raise_amount
-                        self.pot += bet_amount
-                        is_new_bet = True
-                        print(f"{player.name} raised to {current_bet}, current pot is {self.pot}.")
-                    except ValueError:
-                        print("Invalid input, please enter a number.")
-                        continue
-                else:
-                    print("Invalid action, please choose 'call', 'raise', or 'fold'.")
-                    continue
+                        else:
+                            amount_valid = True
+                    total_bet = current_bet - player.current_round_bet + raise_amount
+                    bet_amount = player.bet(total_bet)
+                    player.current_round_bet = bet_amount
+                    current_bet += raise_amount
+                    self.pot += bet_amount
+                    is_new_bet = True
+                    print(f"{player.name} raised to {current_bet}, current pot is {self.pot}.")
 
     def flop(self):
         # 发前三张公共牌
